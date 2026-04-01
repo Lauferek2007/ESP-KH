@@ -1,10 +1,10 @@
 esphome:
   name: kh-aeration-min
   friendly_name: "KH Keeper Min"
-  comment: "Minimalny KH Keeper na aeracji."
+  comment: "Minimal KH Keeper for bench testing."
   project:
     name: khkeeper.aeration
-    version: "2026.04.01-min"
+    version: "2026.04.01-testbench"
   on_boot:
     priority: 800
     then:
@@ -36,15 +36,18 @@ web_server:
       name: "pH"
       sorting_weight: 20
     - id: grp_pumps
-      name: "Pompy"
+      name: "Pumps"
       sorting_weight: 30
     - id: grp_service
-      name: "Serwis"
+      name: "Service"
       sorting_weight: 40
+    - id: grp_diag
+      name: "Diag"
+      sorting_weight: 50
 
 wifi:
-  ssid: "WIFI_SSID"
-  password: "WIFI_PASSWORD"
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
   fast_connect: true
   reboot_timeout: 0s
   ap:
@@ -105,7 +108,7 @@ globals:
 
 number:
   - platform: template
-    name: "pH • skala [pH na V]"
+    name: "pH scale [pH per V]"
     id: ph_scale
     min_value: -10
     max_value: 10
@@ -113,9 +116,12 @@ number:
     restore_value: true
     initial_value: -5.00
     optimistic: true
+    web_server:
+      sorting_group_id: grp_ph
+      sorting_weight: 10
 
   - platform: template
-    name: "Komora • objętość [ml]"
+    name: "Chamber volume [ml]"
     id: chamber_ml
     min_value: 5
     max_value: 500
@@ -123,9 +129,12 @@ number:
     restore_value: true
     initial_value: 60
     optimistic: true
+    web_server:
+      sorting_group_id: grp_kh
+      sorting_weight: 10
 
   - platform: template
-    name: "Fallback • czas napełniania [s]"
+    name: "Fill fallback [s]"
     id: fallback_fill_s
     min_value: 1
     max_value: 120
@@ -133,9 +142,12 @@ number:
     restore_value: true
     initial_value: 25
     optimistic: true
+    web_server:
+      sorting_group_id: grp_kh
+      sorting_weight: 20
 
   - platform: template
-    name: "Fallback • czas opróżniania [s]"
+    name: "Drain fallback [s]"
     id: fallback_drain_s
     min_value: 1
     max_value: 120
@@ -143,9 +155,12 @@ number:
     restore_value: true
     initial_value: 25
     optimistic: true
+    web_server:
+      sorting_group_id: grp_kh
+      sorting_weight: 30
 
   - platform: template
-    name: "Aeracja • czas pełny [s]"
+    name: "Aeration full [s]"
     id: t_aer_full
     min_value: 10
     max_value: 1800
@@ -153,9 +168,12 @@ number:
     restore_value: true
     initial_value: 600
     optimistic: true
+    web_server:
+      sorting_group_id: grp_kh
+      sorting_weight: 40
 
   - platform: template
-    name: "Stabilizacja • przed pomiarem [s]"
+    name: "Settle before [s]"
     id: t_settle_pre
     min_value: 0
     max_value: 600
@@ -163,9 +181,12 @@ number:
     restore_value: true
     initial_value: 30
     optimistic: true
+    web_server:
+      sorting_group_id: grp_kh
+      sorting_weight: 50
 
   - platform: template
-    name: "Stabilizacja • po aeracji [s]"
+    name: "Settle after [s]"
     id: t_settle_post
     min_value: 0
     max_value: 600
@@ -173,19 +194,38 @@ number:
     restore_value: true
     initial_value: 20
     optimistic: true
+    web_server:
+      sorting_group_id: grp_kh
+      sorting_weight: 60
 
   - platform: template
-    name: "Szybkość skrócona • mnożnik"
+    name: "Quick factor"
     id: quick_factor
     min_value: 0.05
     max_value: 1.0
     step: 0.05
     restore_value: true
-    initial_value: 0.10
+    initial_value: 0.25
     optimistic: true
+    web_server:
+      sorting_group_id: grp_kh
+      sorting_weight: 70
 
   - platform: template
-    name: "CO2 równowaga [mg na L]"
+    name: "Service factor"
+    id: service_test_factor
+    min_value: 0.02
+    max_value: 0.50
+    step: 0.01
+    restore_value: true
+    initial_value: 0.10
+    optimistic: true
+    web_server:
+      sorting_group_id: grp_service
+      sorting_weight: 10
+
+  - platform: template
+    name: "CO2 equilibrium [mg per L]"
     id: co2_eq
     min_value: 1.0
     max_value: 10.0
@@ -193,9 +233,25 @@ number:
     restore_value: true
     initial_value: 3.0
     optimistic: true
+    web_server:
+      sorting_group_id: grp_kh
+      sorting_weight: 80
 
   - platform: template
-    name: "P1 • zmierzone ml (30s)"
+    name: "Pump calibration time [s]"
+    id: pump_calibration_time_s
+    min_value: 5
+    max_value: 120
+    step: 1
+    restore_value: true
+    initial_value: 30
+    optimistic: true
+    web_server:
+      sorting_group_id: grp_service
+      sorting_weight: 20
+
+  - platform: template
+    name: "P1 measured volume [ml]"
     id: p1_measured_ml
     min_value: 0
     max_value: 1000
@@ -203,9 +259,12 @@ number:
     restore_value: false
     initial_value: 0
     optimistic: true
+    web_server:
+      sorting_group_id: grp_service
+      sorting_weight: 30
 
   - platform: template
-    name: "P2 • zmierzone ml (30s)"
+    name: "P2 measured volume [ml]"
     id: p2_measured_ml
     min_value: 0
     max_value: 1000
@@ -213,10 +272,13 @@ number:
     restore_value: false
     initial_value: 0
     optimistic: true
+    web_server:
+      sorting_group_id: grp_service
+      sorting_weight: 40
 
 select:
   - platform: template
-    name: "Główny sensor pH (KH)"
+    name: "Main pH channel"
     id: ph_main_select
     optimistic: true
     options:
@@ -230,6 +292,9 @@ select:
           } else {
             id(main_ph_channel) = 1;
           }
+    web_server:
+      sorting_group_id: grp_ph
+      sorting_weight: 20
 
 sensor:
   - platform: adc
@@ -237,7 +302,7 @@ sensor:
     pin: GPIO32
     attenuation: 12db
     update_interval: 1s
-    name: "A0 • pH napięcie [V]"
+    name: "A0 pH voltage [V]"
     accuracy_decimals: 3
     filters:
       - multiply: 3.3
@@ -246,14 +311,14 @@ sensor:
           send_every: 1
     web_server:
       sorting_group_id: grp_ph
-      sorting_weight: 10
+      sorting_weight: 30
 
   - platform: adc
     id: ph_a1_v
     pin: GPIO33
     attenuation: 12db
     update_interval: 1s
-    name: "A1 • pH napięcie [V]"
+    name: "A1 pH voltage [V]"
     accuracy_decimals: 3
     filters:
       - multiply: 3.3
@@ -262,11 +327,11 @@ sensor:
           send_every: 1
     web_server:
       sorting_group_id: grp_ph
-      sorting_weight: 20
+      sorting_weight: 40
 
   - platform: template
     id: ph_main
-    name: "pH (główny)"
+    name: "Main pH"
     update_interval: 1s
     unit_of_measurement: "pH"
     accuracy_decimals: 2
@@ -277,41 +342,41 @@ sensor:
       return scale * v + off;
     web_server:
       sorting_group_id: grp_ph
-      sorting_weight: 30
+      sorting_weight: 50
 
   - platform: template
     id: ph_before
-    name: "pH • przed aeracją"
+    name: "pH before aeration"
     update_interval: never
     unit_of_measurement: "pH"
     accuracy_decimals: 2
     web_server:
       sorting_group_id: grp_kh
-      sorting_weight: 20
+      sorting_weight: 90
 
   - platform: template
     id: ph_after
-    name: "pH • po aeracji"
+    name: "pH after aeration"
     update_interval: never
     unit_of_measurement: "pH"
     accuracy_decimals: 2
     web_server:
       sorting_group_id: grp_kh
-      sorting_weight: 30
+      sorting_weight: 100
 
   - platform: template
     id: kh_last
-    name: "KH • ostatni [dKH]"
+    name: "Last KH [dKH]"
     update_interval: never
     unit_of_measurement: "dKH"
     accuracy_decimals: 2
     web_server:
       sorting_group_id: grp_kh
-      sorting_weight: 40
+      sorting_weight: 110
 
   - platform: template
     id: p1_mlps_view
-    name: "P1 • kalibracja [ml na s]"
+    name: "P1 calibration [ml per s]"
     update_interval: 5s
     unit_of_measurement: "ml/s"
     accuracy_decimals: 3
@@ -323,7 +388,7 @@ sensor:
 
   - platform: template
     id: p2_mlps_view
-    name: "P2 • kalibracja [ml na s]"
+    name: "P2 calibration [ml per s]"
     update_interval: 5s
     unit_of_measurement: "ml/s"
     accuracy_decimals: 3
@@ -333,21 +398,84 @@ sensor:
       sorting_group_id: grp_pumps
       sorting_weight: 20
 
+  - platform: wifi_signal
+    name: "WiFi RSSI"
+    id: api_wifi_rssi
+    update_interval: 30s
+    web_server:
+      sorting_group_id: grp_diag
+      sorting_weight: 10
+
+  - platform: uptime
+    name: "Uptime [s]"
+    id: api_uptime_s
+    update_interval: 60s
+    web_server:
+      sorting_group_id: grp_diag
+      sorting_weight: 20
+
 text_sensor:
   - platform: template
     id: kh_status_text
-    name: "KH • status"
+    name: "KH status"
     update_interval: never
     lambda: |-
       return {"Idle"};
     web_server:
       sorting_group_id: grp_kh
-      sorting_weight: 10
+      sorting_weight: 120
+
+  - platform: template
+    id: kh_mode_text
+    name: "KH mode"
+    update_interval: never
+    lambda: |-
+      return {"Idle"};
+    web_server:
+      sorting_group_id: grp_kh
+      sorting_weight: 130
+
+  - platform: template
+    id: kh_error_text
+    name: "Last error"
+    update_interval: never
+    lambda: |-
+      return {"None"};
+    web_server:
+      sorting_group_id: grp_diag
+      sorting_weight: 30
+
+  - platform: wifi_info
+    ip_address:
+      name: "IP address"
+      id: api_ip_address
+      web_server:
+        sorting_group_id: grp_diag
+        sorting_weight: 40
+    ssid:
+      name: "WiFi SSID"
+      id: api_wifi_ssid
+      web_server:
+        sorting_group_id: grp_diag
+        sorting_weight: 50
+    mac_address:
+      name: "WiFi MAC"
+      id: api_wifi_mac
+      web_server:
+        sorting_group_id: grp_diag
+        sorting_weight: 60
+
+  - platform: version
+    name: "ESPHome version"
+    id: api_version
+    web_server:
+      sorting_group_id: grp_diag
+      sorting_weight: 70
 
 switch:
   - platform: gpio
     id: pump_p1_in
-    name: "P1 • pobór z akwarium"
+    name: "P1 intake"
     pin: GPIO25
     restore_mode: ALWAYS_OFF
     web_server:
@@ -356,7 +484,7 @@ switch:
 
   - platform: gpio
     id: pump_p2_out
-    name: "P2 • powrót do akwarium"
+    name: "P2 return"
     pin: GPIO26
     interlock:
       - pump_p1_in
@@ -368,16 +496,16 @@ switch:
 
   - platform: gpio
     id: air_pump
-    name: "Aeracja • pompka powietrza"
+    name: "Air pump"
     pin: GPIO27
     restore_mode: ALWAYS_OFF
     web_server:
-      sorting_group_id: grp_kh
+      sorting_group_id: grp_pumps
       sorting_weight: 50
 
 button:
   - platform: template
-    name: "pH 7.00 – kalibracja (GŁÓWNY)"
+    name: "Calibrate pH 7.00"
     id: api_ph7_cal
     on_press:
       - lambda: |-
@@ -389,104 +517,166 @@ button:
           } else {
             id(ph_off_a1) = new_off;
           }
-          ESP_LOGI("ph", "Kalibracja pH7 -> scale=%.3f, V=%.3f, offset=%.3f (kanal=%s)",
+          id(kh_error_text).publish_state("None");
+          ESP_LOGI("ph", "Calibrate pH7 scale=%.3f V=%.3f offset=%.3f channel=%s",
                    scale, v, new_off, (id(main_ph_channel) == 0) ? "A0" : "A1");
     web_server:
       sorting_group_id: grp_ph
-      sorting_weight: 40
+      sorting_weight: 60
 
   - platform: template
-    name: "Kalibracja P1 • start 30s"
+    name: "P1 calibration run"
     id: api_cal_p1_30s
     on_press:
+      - text_sensor.template.publish:
+          id: kh_mode_text
+          state: "Pump calibration"
+      - text_sensor.template.publish:
+          id: kh_status_text
+          state: "P1 calibration running"
       - switch.turn_on: pump_p1_in
-      - delay: 30s
+      - delay: !lambda "return (uint32_t) (id(pump_calibration_time_s).state * 1000.0f);"
       - switch.turn_off: pump_p1_in
+      - text_sensor.template.publish:
+          id: kh_status_text
+          state: "Enter P1 measured volume"
     web_server:
       sorting_group_id: grp_service
-      sorting_weight: 10
+      sorting_weight: 50
 
   - platform: template
-    name: "Kalibracja P2 • start 30s"
+    name: "P2 calibration run"
     id: api_cal_p2_30s
     on_press:
+      - text_sensor.template.publish:
+          id: kh_mode_text
+          state: "Pump calibration"
+      - text_sensor.template.publish:
+          id: kh_status_text
+          state: "P2 calibration running"
       - switch.turn_on: pump_p2_out
-      - delay: 30s
+      - delay: !lambda "return (uint32_t) (id(pump_calibration_time_s).state * 1000.0f);"
       - switch.turn_off: pump_p2_out
+      - text_sensor.template.publish:
+          id: kh_status_text
+          state: "Enter P2 measured volume"
     web_server:
       sorting_group_id: grp_service
-      sorting_weight: 20
+      sorting_weight: 60
 
   - platform: template
-    name: "Kalibracja P1 • zapisz ml->ml na s"
+    name: "Save P1 calibration"
     id: api_cal_p1_save
     on_press:
       - lambda: |-
-          if (id(p1_measured_ml).state > 0.0f) {
-            id(p1_mlps) = id(p1_measured_ml).state / 30.0f;
-            ESP_LOGI("pump", "P1 ml/s = %.3f", id(p1_mlps));
+          const float cal_time_s = id(pump_calibration_time_s).state;
+          if (cal_time_s <= 0.0f || id(p1_measured_ml).state <= 0.0f) {
+            id(kh_error_text).publish_state("Invalid P1 calibration input");
+            ESP_LOGW("pump", "Invalid P1 calibration input");
+            return;
           }
+          id(p1_mlps) = id(p1_measured_ml).state / cal_time_s;
+          id(kh_error_text).publish_state("None");
+          ESP_LOGI("pump", "P1 ml/s = %.3f", id(p1_mlps));
+      - text_sensor.template.publish:
+          id: kh_status_text
+          state: "P1 calibration saved"
     web_server:
       sorting_group_id: grp_service
-      sorting_weight: 30
+      sorting_weight: 70
 
   - platform: template
-    name: "Kalibracja P2 • zapisz ml->ml na s"
+    name: "Save P2 calibration"
     id: api_cal_p2_save
     on_press:
       - lambda: |-
-          if (id(p2_measured_ml).state > 0.0f) {
-            id(p2_mlps) = id(p2_measured_ml).state / 30.0f;
-            ESP_LOGI("pump", "P2 ml/s = %.3f", id(p2_mlps));
+          const float cal_time_s = id(pump_calibration_time_s).state;
+          if (cal_time_s <= 0.0f || id(p2_measured_ml).state <= 0.0f) {
+            id(kh_error_text).publish_state("Invalid P2 calibration input");
+            ESP_LOGW("pump", "Invalid P2 calibration input");
+            return;
           }
+          id(p2_mlps) = id(p2_measured_ml).state / cal_time_s;
+          id(kh_error_text).publish_state("None");
+          ESP_LOGI("pump", "P2 ml/s = %.3f", id(p2_mlps));
+      - text_sensor.template.publish:
+          id: kh_status_text
+          state: "P2 calibration saved"
     web_server:
       sorting_group_id: grp_service
-      sorting_weight: 40
+      sorting_weight: 80
 
   - platform: template
-    name: "KH • start PELNY"
+    name: "Start KH full"
     id: api_start_measure_full
     on_press:
+      - text_sensor.template.publish:
+          id: kh_mode_text
+          state: "Full"
       - lambda: |-
           id(g_speed_mult) = 1.0f;
       - script.execute: kh_aer_core
     web_server:
       sorting_group_id: grp_kh
-      sorting_weight: 60
+      sorting_weight: 140
 
   - platform: template
-    name: "KH • start SZYBKI"
+    name: "Start KH quick"
     id: api_start_measure_quick
     on_press:
+      - text_sensor.template.publish:
+          id: kh_mode_text
+          state: "Quick"
       - lambda: |-
           id(g_speed_mult) = id(quick_factor).state;
       - script.execute: kh_aer_core
     web_server:
       sorting_group_id: grp_kh
-      sorting_weight: 70
+      sorting_weight: 150
 
   - platform: template
-    name: "KH • STOP"
+    name: "Start service test"
+    id: api_start_measure_service
+    on_press:
+      - text_sensor.template.publish:
+          id: kh_mode_text
+          state: "Service test"
+      - lambda: |-
+          id(g_speed_mult) = id(service_test_factor).state;
+      - script.execute: kh_aer_core
+    web_server:
+      sorting_group_id: grp_service
+      sorting_weight: 90
+
+  - platform: template
+    name: "KH STOP"
     id: api_kh_stop
     on_press:
       - script.stop: kh_measure
       - script.stop: kh_measure_run
       - script.stop: kh_measure_quick
+      - script.stop: kh_service_test
       - script.stop: kh_aer_core
       - switch.turn_off: pump_p1_in
       - switch.turn_off: pump_p2_out
       - switch.turn_off: air_pump
       - text_sensor.template.publish:
           id: kh_status_text
-          state: "STOP"
+          state: "Stopped"
+      - text_sensor.template.publish:
+          id: kh_mode_text
+          state: "Stopped"
     web_server:
       sorting_group_id: grp_kh
-      sorting_weight: 80
+      sorting_weight: 160
 
 script:
   - id: kh_measure
     mode: restart
     then:
+      - text_sensor.template.publish:
+          id: kh_mode_text
+          state: "Full"
       - lambda: |-
           id(g_speed_mult) = 1.0f;
       - script.execute: kh_aer_core
@@ -494,6 +684,9 @@ script:
   - id: kh_measure_run
     mode: restart
     then:
+      - text_sensor.template.publish:
+          id: kh_mode_text
+          state: "Full"
       - lambda: |-
           id(g_speed_mult) = 1.0f;
       - script.execute: kh_aer_core
@@ -501,8 +694,21 @@ script:
   - id: kh_measure_quick
     mode: restart
     then:
+      - text_sensor.template.publish:
+          id: kh_mode_text
+          state: "Quick"
       - lambda: |-
           id(g_speed_mult) = id(quick_factor).state;
+      - script.execute: kh_aer_core
+
+  - id: kh_service_test
+    mode: restart
+    then:
+      - text_sensor.template.publish:
+          id: kh_mode_text
+          state: "Service test"
+      - lambda: |-
+          id(g_speed_mult) = id(service_test_factor).state;
       - script.execute: kh_aer_core
 
   - id: kh_aer_core
@@ -510,7 +716,7 @@ script:
     then:
       - text_sensor.template.publish:
           id: kh_status_text
-          state: "Oproznianie komory"
+          state: "Prepare times"
       - lambda: |-
           const float vol_ml = id(chamber_ml).state;
           const float mult = id(g_speed_mult);
@@ -521,20 +727,27 @@ script:
           id(__t_settle_pre_ms) = (uint32_t) (id(t_settle_pre).state * 1000.0f * mult);
           id(__t_aer_ms) = (uint32_t) (id(t_aer_full).state * 1000.0f * mult);
           id(__t_settle_post_ms) = (uint32_t) (id(t_settle_post).state * 1000.0f * mult);
-          ESP_LOGI("kh", "Czasy[ms] mult=%.2f fill=%u drain=%u settle_pre=%u aer=%u settle_post=%u",
+          id(kh_error_text).publish_state("None");
+          ESP_LOGI("kh", "Times[ms] mult=%.2f fill=%u drain=%u settle_pre=%u aer=%u settle_post=%u",
                    mult, id(__t_fill_ms), id(__t_drain_ms), id(__t_settle_pre_ms), id(__t_aer_ms), id(__t_settle_post_ms));
 
+      - text_sensor.template.publish:
+          id: kh_status_text
+          state: "Drain chamber"
       - switch.turn_on: pump_p2_out
       - delay: !lambda "return id(__t_drain_ms);"
       - switch.turn_off: pump_p2_out
 
+      - text_sensor.template.publish:
+          id: kh_status_text
+          state: "Fill sample"
       - switch.turn_on: pump_p1_in
       - delay: !lambda "return id(__t_fill_ms);"
       - switch.turn_off: pump_p1_in
 
       - text_sensor.template.publish:
           id: kh_status_text
-          state: "Stabilizacja przed pomiarem"
+          state: "Settle before"
       - delay: !lambda "return id(__t_settle_pre_ms);"
 
       - if:
@@ -553,14 +766,14 @@ script:
 
       - text_sensor.template.publish:
           id: kh_status_text
-          state: "Aeracja"
+          state: "Aeration"
       - switch.turn_on: air_pump
       - delay: !lambda "return id(__t_aer_ms);"
       - switch.turn_off: air_pump
 
       - text_sensor.template.publish:
           id: kh_status_text
-          state: "Stabilizacja po aeracji"
+          state: "Settle after"
       - delay: !lambda "return id(__t_settle_post_ms);"
 
       - if:
@@ -586,10 +799,11 @@ script:
 
       - text_sensor.template.publish:
           id: kh_status_text
-          state: "Powrot probki"
+          state: "Return sample"
       - switch.turn_on: pump_p2_out
       - delay: !lambda "return id(__t_drain_ms);"
       - switch.turn_off: pump_p2_out
+
       - text_sensor.template.publish:
           id: kh_status_text
-          state: "Idle"
+          state: "Completed"

@@ -17,6 +17,14 @@ To repo sluzy do:
 - `docs/` - notatki o sprzecie, pinach i wymaganiach
 - `scripts/` - lokalne skrypty pomocnicze do walidacji i kompilacji
 
+Najwazniejsze dokumenty robocze:
+
+- `docs/hardware-notes.md`
+- `docs/session-notes.md`
+- `docs/kh-methodology.md`
+- `docs/esp-project-spec.md`
+- `docs/project-target-architecture.md`
+
 ## Aktualny stan
 
 Obecnie aktywnym plikiem roboczym jest:
@@ -99,6 +107,9 @@ Jesli kolejny komputer lub kolejny Codex ma przejac prace:
 - najpierw przeczytaj `README.md`
 - potem sprawdz `docs/hardware-notes.md`
 - potem przeczytaj `docs/session-notes.md`
+- potem przeczytaj `docs/kh-methodology.md`
+- potem przeczytaj `docs/esp-project-spec.md`
+- potem przeczytaj `docs/project-target-architecture.md`
 - nastepnie otworz `esphome/kh-aeration-min.yaml`
 
 Dzieki temu rozmowa nie musi byc jedynym zrodlem wiedzy o projekcie.
