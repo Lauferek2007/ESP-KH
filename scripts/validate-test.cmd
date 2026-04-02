@@ -1,3 +1,3 @@
 @echo off
 setlocal
-"%~dp0esphome.cmd" config "%~dp0..\esphome\test-esp32.yaml"
+"%~dp0esphome.cmd" config "%~dp0..\esphome\kh-aeration-min.yaml"
