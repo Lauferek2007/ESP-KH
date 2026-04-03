@@ -401,9 +401,9 @@
       <div class="topbar">
         <h2 class="title" id="title">Panel glowny</h2>
         <div class="toolbar">
-          <button class="btn primary">Start KH quick 60s</button>
-          <button class="btn warn">Tryb serwis</button>
-          <button class="btn danger">KH STOP</button>
+          <button class="btn primary" id="topStartQuick60">Start KH quick 60s</button>
+          <button class="btn warn" id="topStartService">Tryb serwis</button>
+          <button class="btn danger" id="topStop">KH STOP</button>
         </div>
       </div>
 
@@ -794,13 +794,35 @@
       swAir: "switch-manual_hold_air",
     };
 
-    async function post(path) {
-      const res = await fetch(`${API_BASE}${path}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: "x=",
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+    let apiQueue = Promise.resolve();
+
+    async function post(path, retries = 3) {
+      let lastError = null;
+      for (let attempt = 1; attempt <= retries; attempt++) {
+        try {
+          const res = await fetch(`${API_BASE}${path}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/x-www-form-urlencoded" },
+            body: "x=",
+          });
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          return;
+        } catch (err) {
+          lastError = err;
+          await sleep(250 * attempt);
+        }
+      }
+      throw lastError || new Error("POST failed");
+    }
+
+    function queueApiCall(task) {
+      apiQueue = apiQueue
+        .then(task)
+        .catch((err) => {
+          addLog("debugLog", `Błąd API: ${err.message || err}`);
+        });
+      return apiQueue;
     }
 
     async function setNumber(objectId, value) {
@@ -904,43 +926,47 @@
     document.getElementById("p2Speed").addEventListener("input", (e) => document.getElementById("p2SpeedLabel").textContent = `${Math.round(e.target.value)}%`);
 
     document.getElementById("calPh1").addEventListener("change", debounce(async (e) => {
-      await setNumber("ph_cal_point_1_target", Number(e.target.value).toFixed(2));
+      await queueApiCall(() => setNumber("ph_cal_point_1_target", Number(e.target.value).toFixed(2)));
       addLog("debugLog", `Ustawiono pH punkt 1 = ${Number(e.target.value).toFixed(2)}`);
     }));
     document.getElementById("calPh2").addEventListener("change", debounce(async (e) => {
-      await setNumber("ph_cal_point_2_target", Number(e.target.value).toFixed(2));
+      await queueApiCall(() => setNumber("ph_cal_point_2_target", Number(e.target.value).toFixed(2)));
       addLog("debugLog", `Ustawiono pH punkt 2 = ${Number(e.target.value).toFixed(2)}`);
     }));
-    document.getElementById("p1Ml").addEventListener("change", debounce(async (e) => await setNumber("p1_measured_volume__ml_", Math.round(e.target.value))));
-    document.getElementById("p2Ml").addEventListener("change", debounce(async (e) => await setNumber("p2_measured_volume__ml_", Math.round(e.target.value))));
-    document.getElementById("manualVol").addEventListener("change", debounce(async (e) => await setNumber("manual_test_volume__ml_", Math.round(e.target.value))));
-    document.getElementById("p1Speed").addEventListener("change", debounce(async (e) => await setNumber("p1_speed____", Math.round(e.target.value))));
-    document.getElementById("p2Speed").addEventListener("change", debounce(async (e) => await setNumber("p2_speed____", Math.round(e.target.value))));
+    document.getElementById("p1Ml").addEventListener("change", debounce(async (e) => await queueApiCall(() => setNumber("p1_measured_volume__ml_", Math.round(e.target.value)))));
+    document.getElementById("p2Ml").addEventListener("change", debounce(async (e) => await queueApiCall(() => setNumber("p2_measured_volume__ml_", Math.round(e.target.value)))));
+    document.getElementById("manualVol").addEventListener("change", debounce(async (e) => await queueApiCall(() => setNumber("manual_test_volume__ml_", Math.round(e.target.value)))));
+    document.getElementById("p1Speed").addEventListener("change", debounce(async (e) => await queueApiCall(() => setNumber("p1_speed____", Math.round(e.target.value)))));
+    document.getElementById("p2Speed").addEventListener("change", debounce(async (e) => await queueApiCall(() => setNumber("p2_speed____", Math.round(e.target.value)))));
 
-    document.getElementById("btnCapPh1").addEventListener("click", async () => { await pressButton("capture_ph_point_1"); addLog("debugLog", "Przechwycono punkt pH 1."); });
-    document.getElementById("btnCapPh2").addEventListener("click", async () => { await pressButton("capture_ph_point_2"); addLog("debugLog", "Przechwycono punkt pH 2."); });
-    document.getElementById("btnSavePh2pt").addEventListener("click", async () => { await pressButton("save_ph_2-point_calibration"); addLog("debugLog", "Zapisano kalibrację pH 2-punktową."); });
-    document.getElementById("btnCalP1Run").addEventListener("click", async () => { await pressButton("calibrate_p1__60s_"); addLog("debugLog", "Start kalibracji P1 (60s)."); });
-    document.getElementById("btnCalP2Run").addEventListener("click", async () => { await pressButton("calibrate_p2__60s_"); addLog("debugLog", "Start kalibracji P2 (60s)."); });
-    document.getElementById("btnCalP1Save").addEventListener("click", async () => { await pressButton("save_p1_calibration"); addLog("debugLog", "Zapisano kalibrację P1."); });
-    document.getElementById("btnCalP2Save").addEventListener("click", async () => { await pressButton("save_p2_calibration"); addLog("debugLog", "Zapisano kalibrację P2."); });
-    document.getElementById("btnManualP1").addEventListener("click", async () => { await pressButton("manual_test_p1"); addLog("debugLog", "Manual test P1."); });
-    document.getElementById("btnManualP2").addEventListener("click", async () => { await pressButton("manual_test_p2"); addLog("debugLog", "Manual test P2."); });
+    document.getElementById("btnCapPh1").addEventListener("click", async () => { await queueApiCall(() => pressButton("capture_ph_point_1")); addLog("debugLog", "Przechwycono punkt pH 1."); });
+    document.getElementById("btnCapPh2").addEventListener("click", async () => { await queueApiCall(() => pressButton("capture_ph_point_2")); addLog("debugLog", "Przechwycono punkt pH 2."); });
+    document.getElementById("btnSavePh2pt").addEventListener("click", async () => { await queueApiCall(() => pressButton("save_ph_2-point_calibration")); addLog("debugLog", "Zapisano kalibrację pH 2-punktową."); });
+    document.getElementById("btnCalP1Run").addEventListener("click", async () => { await queueApiCall(() => pressButton("calibrate_p1__60s_")); addLog("debugLog", "Start kalibracji P1 (60s)."); });
+    document.getElementById("btnCalP2Run").addEventListener("click", async () => { await queueApiCall(() => pressButton("calibrate_p2__60s_")); addLog("debugLog", "Start kalibracji P2 (60s)."); });
+    document.getElementById("btnCalP1Save").addEventListener("click", async () => { await queueApiCall(() => pressButton("save_p1_calibration")); addLog("debugLog", "Zapisano kalibrację P1."); });
+    document.getElementById("btnCalP2Save").addEventListener("click", async () => { await queueApiCall(() => pressButton("save_p2_calibration")); addLog("debugLog", "Zapisano kalibrację P2."); });
+    document.getElementById("btnManualP1").addEventListener("click", async () => { await queueApiCall(() => pressButton("manual_test_p1")); addLog("debugLog", "Manual test P1."); });
+    document.getElementById("btnManualP2").addEventListener("click", async () => { await queueApiCall(() => pressButton("manual_test_p2")); addLog("debugLog", "Manual test P2."); });
 
-    document.getElementById("swHoldP1").addEventListener("click", async () => turnSwitch("manual_hold_p1", !document.getElementById("swHoldP1").classList.contains("on")));
-    document.getElementById("swHoldP2").addEventListener("click", async () => turnSwitch("manual_hold_p2", !document.getElementById("swHoldP2").classList.contains("on")));
-    document.getElementById("swHoldAir").addEventListener("click", async () => turnSwitch("manual_hold_air", !document.getElementById("swHoldAir").classList.contains("on")));
+    document.getElementById("topStartQuick60").addEventListener("click", async () => { await queueApiCall(() => pressButton("start_kh_quick_60s")); addLog("opsLog", "Start KH quick 60s (topbar)."); });
+    document.getElementById("topStartService").addEventListener("click", async () => { await queueApiCall(() => pressButton("start_service_test")); addLog("opsLog", "Start service test (topbar)."); });
+    document.getElementById("topStop").addEventListener("click", async () => { await queueApiCall(() => pressButton("kh_stop")); addLog("opsLog", "KH STOP (topbar)."); });
+
+    document.getElementById("swHoldP1").addEventListener("click", async () => queueApiCall(() => turnSwitch("manual_hold_p1", !document.getElementById("swHoldP1").classList.contains("on"))));
+    document.getElementById("swHoldP2").addEventListener("click", async () => queueApiCall(() => turnSwitch("manual_hold_p2", !document.getElementById("swHoldP2").classList.contains("on"))));
+    document.getElementById("swHoldAir").addEventListener("click", async () => queueApiCall(() => turnSwitch("manual_hold_air", !document.getElementById("swHoldAir").classList.contains("on"))));
 
     ["testP1", "testP2", "testAir"].forEach((id) => {
       document.getElementById(id).addEventListener("click", async () => {
         const map = { testP1: "p1_intake", testP2: "p2_return", testAir: "air_pump" };
-        await post(`/switch/${encodeURIComponent(map[id])}/turn_on`);
-        setTimeout(() => post(`/switch/${encodeURIComponent(map[id])}/turn_off`).catch(() => {}), 800);
+        await queueApiCall(() => post(`/switch/${encodeURIComponent(map[id])}/turn_on`));
+        setTimeout(() => queueApiCall(() => post(`/switch/${encodeURIComponent(map[id])}/turn_off`)), 800);
         addLog("debugLog", `${id.replace("test", "")}: pulse test wykonany.`);
       });
     });
     document.getElementById("testKhQuick").addEventListener("click", async () => {
-      await pressButton("start_kh_quick_60s");
+      await queueApiCall(() => pressButton("start_kh_quick_60s"));
       addLog("debugLog", "Uruchomiono KH quick 60s.");
     });
     document.getElementById("clearDebug").addEventListener("click", () => {
