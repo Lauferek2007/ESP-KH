@@ -1093,10 +1093,6 @@ button:
     name: "KH STOP"
     id: api_kh_stop
     on_press:
-      - script.stop: kh_measure
-      - script.stop: kh_measure_run
-      - script.stop: kh_measure_quick
-      - script.stop: kh_service_test
       - script.stop: kh_aer_core
       - switch.turn_off: pump_p1_in
       - switch.turn_off: pump_p2_out
@@ -1115,46 +1111,6 @@ button:
       sorting_weight: 160
 
 script:
-  - id: kh_measure
-    mode: restart
-    then:
-      - text_sensor.template.publish:
-          id: kh_mode_text
-          state: "Full"
-      - lambda: |-
-          id(g_speed_mult) = 1.0f;
-      - script.execute: kh_aer_core
-
-  - id: kh_measure_run
-    mode: restart
-    then:
-      - text_sensor.template.publish:
-          id: kh_mode_text
-          state: "Full"
-      - lambda: |-
-          id(g_speed_mult) = 1.0f;
-      - script.execute: kh_aer_core
-
-  - id: kh_measure_quick
-    mode: restart
-    then:
-      - text_sensor.template.publish:
-          id: kh_mode_text
-          state: "Quick"
-      - lambda: |-
-          id(g_speed_mult) = id(quick_factor).state;
-      - script.execute: kh_aer_core
-
-  - id: kh_service_test
-    mode: restart
-    then:
-      - text_sensor.template.publish:
-          id: kh_mode_text
-          state: "Service test"
-      - lambda: |-
-          id(g_speed_mult) = id(service_test_factor).state;
-      - script.execute: kh_aer_core
-
   - id: kh_aer_core
     mode: restart
     then:
