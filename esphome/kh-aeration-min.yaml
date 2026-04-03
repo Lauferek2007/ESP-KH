@@ -576,7 +576,7 @@ text_sensor:
     name: "Info pH 1"
     update_interval: 60s
     lambda: |-
-      return {"Ustaw punkt 1 (3.0-9.5), zanurz sonde, kliknij Capture pH point 1."};
+      return {"To jest glowna kalibracja: Capture pH point 1, potem Apply pH point 1 calibration."};
     web_server:
       sorting_group_id: grp_ph
       sorting_weight: 63
@@ -586,7 +586,7 @@ text_sensor:
     name: "Info pH 2"
     update_interval: 60s
     lambda: |-
-      return {"Zmien bufor, ustaw punkt 2, kliknij Capture pH point 2, potem Save pH 2-point calibration."};
+      return {"pH2 jest opcjonalne: Capture pH point 2 i Save pH 2-point calibration tylko do doprecyzowania."};
     web_server:
       sorting_group_id: grp_ph
       sorting_weight: 64
@@ -818,6 +818,63 @@ button:
       sorting_weight: 61
 
   - platform: template
+    name: "Apply pH point 1 calibration"
+    id: api_ph_cal_p1_apply
+    on_press:
+      - lambda: |-
+          const float v1 = id(ph_cal1_v);
+          const float p1 = id(ph_cal1_target).state;
+          if (isnan(v1) || fabsf(v1) < 0.001f) {
+            id(kh_error_text).publish_state("Missing pH point 1 capture");
+            ESP_LOGW("ph", "Cannot apply pH point1: invalid v1=%.3f", v1);
+            return;
+          }
+          id(ph_offset) = p1 - id(ph_slope) * v1;
+          id(kh_error_text).publish_state("None");
+          id(kh_status_text).publish_state("pH point 1 calibration applied");
+          ESP_LOGI("ph", "Applied pH point1: target=%.2f V=%.3f slope=%.4f offset=%.4f",
+                   p1, v1, id(ph_slope), id(ph_offset));
+      - component.update: ph_main
+    web_server:
+      sorting_group_id: grp_ph
+      sorting_weight: 62
+
+  - platform: template
+    name: "Apply pH point 2 optional"
+    id: api_ph_cal_p2_apply
+    on_press:
+      - lambda: |-
+          const float v1 = id(ph_cal1_v);
+          const float v2 = id(ph_cal2_v);
+          const float p1 = id(ph_cal1_target).state;
+          const float p2 = id(ph_cal2_target).state;
+          const float dv = v2 - v1;
+          const float dp = p2 - p1;
+          if (isnan(v1) || fabsf(v1) < 0.001f) {
+            id(kh_error_text).publish_state("Missing pH point 1 capture");
+            id(kh_status_text).publish_state("pH2 optional skipped");
+            ESP_LOGW("ph", "Cannot apply optional pH2: invalid point1 v1=%.3f", v1);
+            return;
+          }
+          if (isnan(v2) || fabsf(v2) < 0.001f || fabsf(dv) < 0.005f || fabsf(dp) < 0.05f) {
+            id(kh_error_text).publish_state("Missing or invalid pH point 2");
+            id(kh_status_text).publish_state("pH2 optional skipped");
+            ESP_LOGW("ph", "Cannot apply optional pH2: v1=%.3f v2=%.3f p1=%.2f p2=%.2f",
+                     v1, v2, p1, p2);
+            return;
+          }
+          id(ph_slope) = dp / dv;
+          id(ph_offset) = p1 - id(ph_slope) * v1;
+          id(kh_error_text).publish_state("None");
+          id(kh_status_text).publish_state("pH point 2 optional refinement applied");
+          ESP_LOGI("ph", "Applied optional pH2 refinement: slope=%.4f offset=%.4f",
+                   id(ph_slope), id(ph_offset));
+      - component.update: ph_main
+    web_server:
+      sorting_group_id: grp_ph
+      sorting_weight: 63
+
+  - platform: template
     name: "Save pH 2-point calibration"
     id: api_ph_cal_2point_save
     on_press:
@@ -829,21 +886,29 @@ button:
           const float dv = v2 - v1;
           const float dp = p2 - p1;
           if (fabsf(dv) < 0.005f || fabsf(dp) < 0.05f) {
-            id(kh_error_text).publish_state("Invalid pH 2-point calibration");
-            ESP_LOGW("ph", "Invalid pH 2-point: v1=%.3f v2=%.3f p1=%.2f p2=%.2f", v1, v2, p1, p2);
+            // pH2 is optional; fallback to single-point offset update.
+            if (isnan(v1) || fabsf(v1) < 0.001f) {
+              id(kh_error_text).publish_state("Missing pH point 1 capture");
+              id(kh_status_text).publish_state("pH 2-point skipped");
+              ESP_LOGW("ph", "Skip 2-point and cannot fallback: invalid v1=%.3f", v1);
+              return;
+            }
+            id(ph_offset) = p1 - id(ph_slope) * v1;
+            id(kh_error_text).publish_state("pH2 optional: single-point applied");
+            id(kh_status_text).publish_state("pH point 1 applied (pH2 optional)");
+            ESP_LOGW("ph", "2-point skipped: v1=%.3f v2=%.3f p1=%.2f p2=%.2f, using point1 only",
+                     v1, v2, p1, p2);
             return;
           }
           id(ph_slope) = dp / dv;
           id(ph_offset) = p1 - id(ph_slope) * v1;
           id(kh_error_text).publish_state("None");
+          id(kh_status_text).publish_state("pH 2-point calibration saved");
           ESP_LOGI("ph", "Saved pH 2-point: slope=%.4f offset=%.4f", id(ph_slope), id(ph_offset));
       - component.update: ph_main
-      - text_sensor.template.publish:
-          id: kh_status_text
-          state: "pH 2-point calibration saved"
     web_server:
       sorting_group_id: grp_ph
-      sorting_weight: 62
+      sorting_weight: 64
 
   - platform: template
     name: "Calibrate P1 (60s)"

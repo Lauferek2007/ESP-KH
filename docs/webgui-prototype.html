@@ -388,7 +388,7 @@
         </div>
         <div class="pill">
           <strong>I2C / ADS</strong>
-          <span class="status-dot warnc"></span>Brak odpowiedzi (NACK)
+          <span class="status-dot" id="adsDot"></span><span id="adsStatus">Sprawdzanie...</span>
         </div>
         <div class="pill">
           <strong>Bezpieczenstwo menzurki</strong>
@@ -428,6 +428,7 @@
             <h3>Tryb pracy</h3>
             <div class="big">Idle</div>
             <div class="muted">Uptime: 01:49:17</div>
+            <div class="muted">Dallas: <span id="dallasTemp">NA</span></div>
           </article>
 
           <article class="card chart-card widget" data-widget="w-chart-main">
@@ -457,7 +458,7 @@
           <article class="card control-card widget" data-widget="w-alerts">
             <h3>Alerty</h3>
             <ul class="list">
-              <li><span class="status-dot warnc"></span>I2C NACK - ADS brak odpowiedzi</li>
+              <li id="adsAlert"><span class="status-dot warnc"></span>ADS: status nieznany</li>
               <li><span class="status-dot ok"></span>Limity menzurki aktywne</li>
               <li><span class="status-dot warnc"></span>Kalibracja pomp: brak danych</li>
             </ul>
@@ -468,7 +469,6 @@
             <ul class="list" id="opsLog">
               <li>[20:29:14] Boot -> WiFi connected, static IP 192.168.1.200</li>
               <li>[20:29:17] KH mode: Idle</li>
-              <li>[20:29:21] I2C warning: NACK from ADS</li>
               <li>[20:29:50] User action: Open Manual Tests</li>
             </ul>
           </article>
@@ -775,13 +775,16 @@
       while (ul.children.length > 16) ul.removeChild(ul.lastChild);
     }
 
-    const API_BASE = "http://192.168.1.200";
+    const API_BASE = (location.hostname === "127.0.0.1" || location.hostname === "localhost")
+      ? "/api"
+      : "http://192.168.1.200";
     const E = {
       mainPh: "sensor-main_ph",
       a1v: "sensor-a1_ph_voltage__v_",
       khLast: "sensor-last_kh__dkh_",
       wifiRssi: "sensor-wifi_rssi",
       wifiSsid: "text_sensor-wifi_ssid",
+      dallas: "sensor-dallas_temp__c_",
       phCal1: "number-ph_cal_point_1_target",
       phCal2: "number-ph_cal_point_2_target",
       p1ml: "number-p1_measured_volume__ml_",
@@ -837,8 +840,63 @@
       await post(`/switch/${encodeURIComponent(objectId)}/${on ? "turn_on" : "turn_off"}`);
     }
 
+    async function getJson(path, timeoutMs = 5000) {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), timeoutMs);
+      try {
+        const res = await fetch(`${API_BASE}${path}`, { signal: controller.signal });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return await res.json();
+      } finally {
+        clearTimeout(timer);
+      }
+    }
+
+    async function getFirstJson(paths, timeoutMs = 3500) {
+      for (const p of paths) {
+        try {
+          return await getJson(p, timeoutMs);
+        } catch {}
+      }
+      throw new Error("all paths failed");
+    }
+
+    async function pollStates() {
+      const reqs = [
+        [["/sensor/main_ph", "/sensor-main_ph"], (d) => bind[E.mainPh]?.(d)],
+        [["/sensor/a1_ph_voltage__v_", "/sensor-a1_ph_voltage__v_"], (d) => bind[E.a1v]?.(d)],
+        [["/sensor/last_kh__dkh_", "/sensor/kh_last", "/sensor-last_kh__dkh_"], (d) => bind[E.khLast]?.(d)],
+        [["/sensor/wifi_rssi", "/sensor/api_wifi_rssi", "/sensor-wifi_rssi"], (d) => bind[E.wifiRssi]?.(d)],
+        [["/text_sensor/wifi_ssid", "/text_sensor/api_wifi_ssid", "/text_sensor-wifi_ssid"], (d) => bind[E.wifiSsid]?.(d)],
+        [["/sensor/dallas_temp__c_", "/sensor/dallas_temp_c", "/sensor-dallas_temp__c_"], (d) => bind[E.dallas]?.(d)],
+      ];
+      let okCount = 0;
+      await Promise.all(reqs.map(async ([paths, apply]) => {
+        try {
+          const d = await getFirstJson(paths, 3500);
+          apply(d);
+          okCount += 1;
+        } catch {}
+      }));
+      const statusRow = document.querySelector(".status-stack .pill .status-dot");
+      if (statusRow) statusRow.className = `status-dot ${okCount >= 2 ? "ok" : "warnc"}`;
+    }
+
     function updateSwitchVisual(el, on) {
       el.classList.toggle("on", !!on);
+    }
+
+    let lastA1Ts = 0;
+    function updateAdsStatus(ok, details = "") {
+      const dot = document.getElementById("adsDot");
+      const txt = document.getElementById("adsStatus");
+      const alert = document.getElementById("adsAlert");
+      if (!dot || !txt || !alert) return;
+      dot.className = `status-dot ${ok ? "ok" : "warnc"}`;
+      txt.textContent = ok ? "ADS online" : `Brak odpowiedzi${details ? ` (${details})` : ""}`;
+      alert.innerHTML = ok
+        ? '<span class="status-dot ok"></span>ADS: komunikacja OK'
+        : `<span class="status-dot warnc"></span>ADS: problem komunikacji${details ? ` (${details})` : ""}`;
     }
 
     const bind = {
@@ -849,10 +907,15 @@
       [E.a1v]: (d) => {
         document.getElementById("phA1v").textContent = d.state || "NA";
         document.getElementById("calA1Now").textContent = d.state || "NA";
+        lastA1Ts = Date.now();
+        const raw = (d.value ?? d.state ?? "").toString();
+        const v = parseFloat(raw.replace(",", "."));
+        updateAdsStatus(Number.isFinite(v), Number.isFinite(v) ? "" : "A1=NA");
       },
       [E.khLast]: (d) => { document.getElementById("khLast").textContent = d.state || "NA"; },
       [E.wifiRssi]: (d) => { document.getElementById("wifiRssi").textContent = d.state || "NA"; },
       [E.wifiSsid]: (d) => { document.getElementById("wifiSsid").textContent = d.state || "NA"; },
+      [E.dallas]: (d) => { document.getElementById("dallasTemp").textContent = d.state || "NA"; },
       [E.phCal1]: (d) => {
         const v = Number(d.value ?? d.state);
         document.getElementById("calPh1").value = v;
@@ -894,6 +957,7 @@
     };
 
     function connectEvents() {
+      if (API_BASE === "/api") return;
       const es = new EventSource(`${API_BASE}/events`);
       es.addEventListener("state", (ev) => {
         try {
@@ -904,6 +968,14 @@
       es.onerror = () => addLog("debugLog", "Brak połączenia z /events lub chwilowy restart ESP.");
     }
     connectEvents();
+    setInterval(() => {
+      pollStates().catch(() => {});
+    }, 5000);
+    pollStates().catch(() => {});
+    updateAdsStatus(false, "oczekiwanie na dane A1");
+    setInterval(() => {
+      if (Date.now() - lastA1Ts > 20000) updateAdsStatus(false, "brak nowych danych A1");
+    }, 5000);
 
     function debounce(fn, delay = 220) {
       let t = 0;
