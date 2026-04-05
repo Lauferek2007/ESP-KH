@@ -429,6 +429,9 @@
             <div class="big">Idle</div>
             <div class="muted">Uptime: 01:49:17</div>
             <div class="muted">Dallas: <span id="dallasTemp">NA</span></div>
+            <div class="muted">CPU load: <span id="cpuLoad">NA</span></div>
+            <div class="muted">Heap used: <span id="heapUsed">NA</span></div>
+            <div class="muted">HTTP avg: <span id="httpAvg">NA</span></div>
           </article>
 
           <article class="card chart-card widget" data-widget="w-chart-main">
@@ -869,6 +872,7 @@
         [["/sensor/wifi_rssi", "/sensor/api_wifi_rssi", "/sensor-wifi_rssi"], (d) => bind[E.wifiRssi]?.(d)],
         [["/text_sensor/wifi_ssid", "/text_sensor/api_wifi_ssid", "/text_sensor-wifi_ssid"], (d) => bind[E.wifiSsid]?.(d)],
         [["/sensor/dallas_temp__c_", "/sensor/dallas_temp_c", "/sensor-dallas_temp__c_"], (d) => bind[E.dallas]?.(d)],
+        [["/diag/metrics"], (d) => bind["diag-metrics"]?.(d)],
       ];
       let okCount = 0;
       await Promise.all(reqs.map(async ([paths, apply]) => {
@@ -916,6 +920,11 @@
       [E.wifiRssi]: (d) => { document.getElementById("wifiRssi").textContent = d.state || "NA"; },
       [E.wifiSsid]: (d) => { document.getElementById("wifiSsid").textContent = d.state || "NA"; },
       [E.dallas]: (d) => { document.getElementById("dallasTemp").textContent = d.state || "NA"; },
+      ["diag-metrics"]: (d) => {
+        document.getElementById("cpuLoad").textContent = Number.isFinite(Number(d.cpu_load_pct)) ? `${Number(d.cpu_load_pct).toFixed(1)}%` : "NA";
+        document.getElementById("heapUsed").textContent = Number.isFinite(Number(d.heap_used_pct)) ? `${Number(d.heap_used_pct).toFixed(1)}%` : "NA";
+        document.getElementById("httpAvg").textContent = Number.isFinite(Number(d.http_avg_ms)) ? `${Number(d.http_avg_ms).toFixed(2)} ms` : "NA";
+      },
       [E.phCal1]: (d) => {
         const v = Number(d.value ?? d.state);
         document.getElementById("calPh1").value = v;

@@ -23,6 +23,12 @@ Ten katalog zawiera pierwszą działającą wersję natywnego firmware bez ESPHo
   - manual testy P1/P2/AIR
   - kalibracja pH (p1 jako główna, p2 opcjonalna)
   - kalibracja P1/P2 (60s)
+  - metryki obciążenia i responsywności:
+    - `/diag/metrics`
+    - CPU load [%]
+    - heap used/free/min/max alloc
+    - loop avg/max [ms]
+    - HTTP handle avg/max [ms]
 
 ## Build
 
@@ -44,6 +50,7 @@ Invoke-WebRequest http://192.168.1.200/version -UseBasicParsing
 Invoke-WebRequest http://192.168.1.200/sensor/a1_ph_voltage__v_ -UseBasicParsing
 Invoke-WebRequest http://192.168.1.200/sensor/dallas_temp__c_ -UseBasicParsing
 Invoke-WebRequest http://192.168.1.200/text_sensor/kh_status -UseBasicParsing
+Invoke-WebRequest http://192.168.1.200/diag/metrics -UseBasicParsing
 ```
 
 ## Ładny panel
@@ -58,4 +65,3 @@ python webgui_proxy_server.py --port 8090 --esp http://192.168.1.200
 Następnie:
 
 - `http://127.0.0.1:8090/webgui-prototype.html`
-

@@ -62,6 +62,25 @@ float g_service_factor = 0.10f;
 String g_kh_status = "Idle";
 String g_kh_mode = "Idle";
 String g_last_error = "None";
+uint32_t g_uptime_s = 0;
+
+float g_cpu_load_pct = 0.0f;
+float g_loop_avg_ms = 0.0f;
+float g_loop_max_ms = 0.0f;
+float g_http_avg_ms = 0.0f;
+float g_http_max_ms = 0.0f;
+uint32_t g_heap_total_b = 0;
+uint32_t g_heap_free_b = 0;
+uint32_t g_heap_min_b = 0;
+uint32_t g_heap_max_alloc_b = 0;
+float g_heap_used_pct = 0.0f;
+
+uint32_t g_dbg_window_start_us = 0;
+uint64_t g_dbg_work_us_acc = 0;
+uint64_t g_dbg_http_us_acc = 0;
+uint32_t g_dbg_work_us_max = 0;
+uint32_t g_dbg_http_us_max = 0;
+uint32_t g_dbg_loops = 0;
 
 uint32_t g_step_deadline_ms = 0;
 uint8_t g_cycle_stage = 0;
@@ -243,6 +262,38 @@ void updatePulse() {
   g_pulse_pin = -1;
 }
 
+void updateDebugWindow(uint32_t workUs, uint32_t httpUs) {
+  g_dbg_work_us_acc += workUs;
+  g_dbg_http_us_acc += httpUs;
+  g_dbg_work_us_max = max(g_dbg_work_us_max, workUs);
+  g_dbg_http_us_max = max(g_dbg_http_us_max, httpUs);
+  g_dbg_loops++;
+
+  const uint32_t nowUs = micros();
+  if ((nowUs - g_dbg_window_start_us) < 1000000UL) return;
+  const uint32_t elapsedUs = max<uint32_t>(1, nowUs - g_dbg_window_start_us);
+  g_dbg_window_start_us = nowUs;
+
+  g_cpu_load_pct = min(100.0f, (100.0f * (float)g_dbg_work_us_acc) / (float)elapsedUs);
+  g_loop_avg_ms = (g_dbg_loops > 0) ? ((float)g_dbg_work_us_acc / (float)g_dbg_loops / 1000.0f) : 0.0f;
+  g_loop_max_ms = (float)g_dbg_work_us_max / 1000.0f;
+  g_http_avg_ms = (g_dbg_loops > 0) ? ((float)g_dbg_http_us_acc / (float)g_dbg_loops / 1000.0f) : 0.0f;
+  g_http_max_ms = (float)g_dbg_http_us_max / 1000.0f;
+
+  g_heap_total_b = ESP.getHeapSize();
+  g_heap_free_b = ESP.getFreeHeap();
+  g_heap_min_b = ESP.getMinFreeHeap();
+  g_heap_max_alloc_b = ESP.getMaxAllocHeap();
+  g_heap_used_pct = (g_heap_total_b > 0) ? (100.0f * (float)(g_heap_total_b - g_heap_free_b) / (float)g_heap_total_b) : 0.0f;
+  g_uptime_s = millis() / 1000UL;
+
+  g_dbg_work_us_acc = 0;
+  g_dbg_http_us_acc = 0;
+  g_dbg_work_us_max = 0;
+  g_dbg_http_us_max = 0;
+  g_dbg_loops = 0;
+}
+
 void registerRoutes() {
   server.onNotFound([]() {
     applyCors();
@@ -263,6 +314,16 @@ void registerRoutes() {
   server.on("/text_sensor/api_wifi_ssid", HTTP_GET, []() { applyCors(); sendJsonState("text_sensor-wifi_ssid", WiFi.SSID()); });
   server.on("/sensor/dallas_temp__c_", HTTP_GET, []() { applyCors(); sendJsonState("sensor-dallas_temp__c_", String(g_dallas_c, 2) + " C"); });
   server.on("/sensor/last_kh__dkh_", HTTP_GET, []() { applyCors(); sendJsonState("sensor-last_kh__dkh_", isnan(g_last_kh) ? "NA" : String(g_last_kh, 2)); });
+  server.on("/sensor/cpu_load__pct_", HTTP_GET, []() { applyCors(); sendJsonState("sensor-cpu_load__pct_", String(g_cpu_load_pct, 1) + " %"); });
+  server.on("/sensor/heap_used__pct_", HTTP_GET, []() { applyCors(); sendJsonState("sensor-heap_used__pct_", String(g_heap_used_pct, 1) + " %"); });
+  server.on("/sensor/heap_free__kb_", HTTP_GET, []() { applyCors(); sendJsonState("sensor-heap_free__kb_", String((float)g_heap_free_b / 1024.0f, 1) + " KB"); });
+  server.on("/sensor/heap_min_free__kb_", HTTP_GET, []() { applyCors(); sendJsonState("sensor-heap_min_free__kb_", String((float)g_heap_min_b / 1024.0f, 1) + " KB"); });
+  server.on("/sensor/heap_max_alloc__kb_", HTTP_GET, []() { applyCors(); sendJsonState("sensor-heap_max_alloc__kb_", String((float)g_heap_max_alloc_b / 1024.0f, 1) + " KB"); });
+  server.on("/sensor/loop_avg__ms_", HTTP_GET, []() { applyCors(); sendJsonState("sensor-loop_avg__ms_", String(g_loop_avg_ms, 3) + " ms"); });
+  server.on("/sensor/loop_max__ms_", HTTP_GET, []() { applyCors(); sendJsonState("sensor-loop_max__ms_", String(g_loop_max_ms, 3) + " ms"); });
+  server.on("/sensor/http_avg__ms_", HTTP_GET, []() { applyCors(); sendJsonState("sensor-http_avg__ms_", String(g_http_avg_ms, 3) + " ms"); });
+  server.on("/sensor/http_max__ms_", HTTP_GET, []() { applyCors(); sendJsonState("sensor-http_max__ms_", String(g_http_max_ms, 3) + " ms"); });
+  server.on("/sensor/uptime__s_", HTTP_GET, []() { applyCors(); sendJsonState("sensor-uptime__s_", String(g_uptime_s)); });
   server.on("/text_sensor/kh_status", HTTP_GET, []() { applyCors(); sendJsonState("text_sensor-kh_status", g_kh_status); });
   server.on("/text_sensor/kh_mode", HTTP_GET, []() { applyCors(); sendJsonState("text_sensor-kh_mode", g_kh_mode); });
   server.on("/text_sensor/last_error", HTTP_GET, []() { applyCors(); sendJsonState("text_sensor-last_error", g_last_error); });
@@ -403,6 +464,24 @@ void registerRoutes() {
     startPulse(PIN_AIR, ms, "Manual test: Air", "Manual test air done");
     sendJsonOk();
   });
+
+  server.on("/diag/metrics", HTTP_GET, []() {
+    applyCors();
+    String body = "{";
+    body += "\"cpu_load_pct\":" + String(g_cpu_load_pct, 2) + ",";
+    body += "\"heap_used_pct\":" + String(g_heap_used_pct, 2) + ",";
+    body += "\"heap_total_b\":" + String(g_heap_total_b) + ",";
+    body += "\"heap_free_b\":" + String(g_heap_free_b) + ",";
+    body += "\"heap_min_b\":" + String(g_heap_min_b) + ",";
+    body += "\"heap_max_alloc_b\":" + String(g_heap_max_alloc_b) + ",";
+    body += "\"loop_avg_ms\":" + String(g_loop_avg_ms, 4) + ",";
+    body += "\"loop_max_ms\":" + String(g_loop_max_ms, 4) + ",";
+    body += "\"http_avg_ms\":" + String(g_http_avg_ms, 4) + ",";
+    body += "\"http_max_ms\":" + String(g_http_max_ms, 4) + ",";
+    body += "\"uptime_s\":" + String(g_uptime_s);
+    body += "}";
+    server.send(200, "application/json", body);
+  });
 }
 }  // namespace
 
@@ -434,13 +513,22 @@ void setup() {
     g_last_error = "WiFi connect timeout";
   }
 
+  g_dbg_window_start_us = micros();
+  g_heap_total_b = ESP.getHeapSize();
+  g_heap_free_b = ESP.getFreeHeap();
+  g_heap_min_b = ESP.getMinFreeHeap();
+  g_heap_max_alloc_b = ESP.getMaxAllocHeap();
+
   registerRoutes();
   server.begin();
 }
 
 void loop() {
   static uint32_t lastSensorMs = 0;
+  const uint32_t loopStartUs = micros();
+  const uint32_t httpStartUs = micros();
   server.handleClient();
+  const uint32_t httpUs = micros() - httpStartUs;
   updateCycle();
   updatePulse();
 
@@ -452,4 +540,7 @@ void loop() {
     dallas.requestTemperatures();
     g_dallas_c = dallas.getTempCByIndex(0);
   }
+  const uint32_t workUs = micros() - loopStartUs;
+  updateDebugWindow(workUs, httpUs);
+  delay(1);
 }
