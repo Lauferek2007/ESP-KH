@@ -81,6 +81,7 @@ uint64_t g_dbg_http_us_acc = 0;
 uint32_t g_dbg_work_us_max = 0;
 uint32_t g_dbg_http_us_max = 0;
 uint32_t g_dbg_loops = 0;
+uint32_t g_dallas_req_ms = 0;
 
 uint32_t g_step_deadline_ms = 0;
 uint8_t g_cycle_stage = 0;
@@ -91,6 +92,8 @@ bool g_pulse_running = false;
 int g_pulse_pin = -1;
 uint32_t g_pulse_deadline_ms = 0;
 String g_pulse_done_status = "";
+bool g_ads_online = false;
+uint32_t g_ads_last_recover_ms = 0;
 
 enum Mode : uint8_t { MODE_FULL, MODE_QUICK, MODE_SERVICE, MODE_QUICK60 };
 Mode g_mode = MODE_FULL;
@@ -101,11 +104,21 @@ inline void setAllOff() {
   digitalWrite(PIN_AIR, LOW);
 }
 
+inline void setSingleOutput(int pin) {
+  setAllOff();
+  digitalWrite(pin, HIGH);
+}
+
 inline float p1RateMlps() { return g_p1_mlps * max(0.1f, min(1.0f, g_p1_speed_pct / 100.0f)); }
 inline float p2RateMlps() { return g_p2_mlps * max(0.1f, min(1.0f, g_p2_speed_pct / 100.0f)); }
 
 inline float mainPh() {
   return g_ph_slope * g_a1_v + g_ph_offset;
+}
+
+inline bool probeAds() {
+  Wire.beginTransmission(0x48);
+  return Wire.endTransmission() == 0;
 }
 
 void sendJsonState(const String &id, const String &state) {
@@ -242,7 +255,10 @@ void updateCycle() {
 }
 
 void startPulse(int pin, uint32_t ms, const String &startStatus, const String &doneStatus) {
-  if (g_pulse_running) return;
+  if (g_pulse_running || g_cycle_running) {
+    g_last_error = "Busy: pulse or cycle running";
+    return;
+  }
   g_pulse_running = true;
   g_pulse_pin = pin;
   g_pulse_deadline_ms = millis() + ms;
@@ -330,6 +346,7 @@ void registerRoutes() {
   server.on("/binary_sensor/p1_active", HTTP_GET, []() { applyCors(); sendJsonState("binary_sensor-p1_active", digitalRead(PIN_P1) ? "ON" : "OFF"); });
   server.on("/binary_sensor/p2_active", HTTP_GET, []() { applyCors(); sendJsonState("binary_sensor-p2_active", digitalRead(PIN_P2) ? "ON" : "OFF"); });
   server.on("/binary_sensor/air_active", HTTP_GET, []() { applyCors(); sendJsonState("binary_sensor-air_active", digitalRead(PIN_AIR) ? "ON" : "OFF"); });
+  server.on("/binary_sensor/ads_online", HTTP_GET, []() { applyCors(); sendJsonState("binary_sensor-ads_online", g_ads_online ? "ON" : "OFF"); });
 
   server.on("/number/ph_cal_point_1_target/set", HTTP_POST, []() { applyCors(); g_ph_cal1_target = readFloatArg("value", g_ph_cal1_target); sendJsonOk(); });
   server.on("/number/ph_cal_point_2_target/set", HTTP_POST, []() { applyCors(); g_ph_cal2_target = readFloatArg("value", g_ph_cal2_target); sendJsonOk(); });
@@ -349,11 +366,11 @@ void registerRoutes() {
   server.on("/switch/manual_hold_p2/turn_off", HTTP_POST, []() { applyCors(); digitalWrite(PIN_P2, LOW); sendJsonOk(); });
   server.on("/switch/manual_hold_air/turn_on", HTTP_POST, []() { applyCors(); setAllOff(); digitalWrite(PIN_AIR, HIGH); sendJsonOk(); });
   server.on("/switch/manual_hold_air/turn_off", HTTP_POST, []() { applyCors(); digitalWrite(PIN_AIR, LOW); sendJsonOk(); });
-  server.on("/switch/p1_intake/turn_on", HTTP_POST, []() { applyCors(); digitalWrite(PIN_P1, HIGH); sendJsonOk(); });
+  server.on("/switch/p1_intake/turn_on", HTTP_POST, []() { applyCors(); setSingleOutput(PIN_P1); sendJsonOk(); });
   server.on("/switch/p1_intake/turn_off", HTTP_POST, []() { applyCors(); digitalWrite(PIN_P1, LOW); sendJsonOk(); });
-  server.on("/switch/p2_return/turn_on", HTTP_POST, []() { applyCors(); digitalWrite(PIN_P2, HIGH); sendJsonOk(); });
+  server.on("/switch/p2_return/turn_on", HTTP_POST, []() { applyCors(); setSingleOutput(PIN_P2); sendJsonOk(); });
   server.on("/switch/p2_return/turn_off", HTTP_POST, []() { applyCors(); digitalWrite(PIN_P2, LOW); sendJsonOk(); });
-  server.on("/switch/air_pump/turn_on", HTTP_POST, []() { applyCors(); digitalWrite(PIN_AIR, HIGH); sendJsonOk(); });
+  server.on("/switch/air_pump/turn_on", HTTP_POST, []() { applyCors(); setSingleOutput(PIN_AIR); sendJsonOk(); });
   server.on("/switch/air_pump/turn_off", HTTP_POST, []() { applyCors(); digitalWrite(PIN_AIR, LOW); sendJsonOk(); });
 
   server.on("/button/capture_ph_point_1/press", HTTP_POST, []() { applyCors(); g_ph_cal1_v = g_a1_v; g_kh_status = "Captured pH point 1"; sendJsonOk(); });
@@ -410,8 +427,16 @@ void registerRoutes() {
   server.on("/button/start_service_test/press", HTTP_POST, []() { applyCors(); startCycle(MODE_SERVICE); sendJsonOk(); });
   server.on("/button/kh_stop/press", HTTP_POST, []() { applyCors(); stopCycle(); sendJsonOk(); });
 
-  server.on("/button/calibrate_p1__60s_/press", HTTP_POST, []() { applyCors(); g_kh_status = "P1 calibration running (60s)"; sendJsonOk(); });
-  server.on("/button/calibrate_p2__60s_/press", HTTP_POST, []() { applyCors(); g_kh_status = "P2 calibration running (60s)"; sendJsonOk(); });
+  server.on("/button/calibrate_p1__60s_/press", HTTP_POST, []() {
+    applyCors();
+    startPulse(PIN_P1, 60000UL, "P1 calibration running (60s)", "P1 calibration run done");
+    sendJsonOk();
+  });
+  server.on("/button/calibrate_p2__60s_/press", HTTP_POST, []() {
+    applyCors();
+    startPulse(PIN_P2, 60000UL, "P2 calibration running (60s)", "P2 calibration run done");
+    sendJsonOk();
+  });
   server.on("/button/save_p1_calibration/press", HTTP_POST, []() {
     applyCors();
     if (g_p1_measured_ml > 0.0f) {
@@ -496,11 +521,15 @@ void setup() {
 
   Wire.begin(PIN_SDA, PIN_SCL);
   ads.setGain(GAIN_TWOTHIRDS);
-  if (!ads.begin()) {
+  g_ads_online = ads.begin();
+  if (!g_ads_online) {
     g_last_error = "ADS init failed";
   }
 
   dallas.begin();
+  dallas.setWaitForConversion(false);
+  dallas.requestTemperatures();
+  g_dallas_req_ms = millis();
 
   WiFi.mode(WIFI_STA);
   WiFi.config(STATIC_IP, GATEWAY, SUBNET, DNS1, DNS2);
@@ -526,21 +555,45 @@ void setup() {
 void loop() {
   static uint32_t lastSensorMs = 0;
   const uint32_t loopStartUs = micros();
-  const uint32_t httpStartUs = micros();
-  server.handleClient();
-  const uint32_t httpUs = micros() - httpStartUs;
+  uint32_t httpUs = 0;
+  for (int i = 0; i < 3; i++) {
+    const uint32_t httpStartUs = micros();
+    server.handleClient();
+    httpUs += (micros() - httpStartUs);
+    yield();
+  }
   updateCycle();
   updatePulse();
 
   const uint32_t now = millis();
   if (now - lastSensorMs >= 1000) {
     lastSensorMs = now;
-    int16_t raw = ads.readADC_SingleEnded(1);
-    g_a1_v = ads.computeVolts(raw);
-    dallas.requestTemperatures();
+    g_ads_online = probeAds();
+    if (g_ads_online) {
+      int16_t raw = ads.readADC_SingleEnded(1);
+      g_a1_v = ads.computeVolts(raw);
+      g_last_error = (g_last_error == "ADS NACK") ? "None" : g_last_error;
+    } else {
+      g_a1_v = NAN;
+      g_last_error = "ADS NACK";
+      if ((now - g_ads_last_recover_ms) > 5000UL) {
+        g_ads_last_recover_ms = now;
+        Wire.begin(PIN_SDA, PIN_SCL);
+        ads.begin();
+      }
+    }
+  }
+
+  if ((now - g_dallas_req_ms) >= 900) {
     g_dallas_c = dallas.getTempCByIndex(0);
+    dallas.requestTemperatures();
+    g_dallas_req_ms = now;
   }
   const uint32_t workUs = micros() - loopStartUs;
   updateDebugWindow(workUs, httpUs);
-  delay(1);
+  if (g_cycle_running || g_pulse_running) {
+    delay(0);
+  } else {
+    delay(1);
+  }
 }

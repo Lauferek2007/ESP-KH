@@ -13,7 +13,7 @@ function Test-EndpointLatency {
   for ($i = 0; $i -lt $Count; $i++) {
     $sw = [System.Diagnostics.Stopwatch]::StartNew()
     try {
-      Invoke-WebRequest -Uri ($base + $Path) -UseBasicParsing -TimeoutSec 5 | Out-Null
+      Invoke-WebRequest -Uri ($base + $Path) -UseBasicParsing -TimeoutSec 8 | Out-Null
       $sw.Stop()
       $samples.Add($sw.Elapsed.TotalMilliseconds)
     }
@@ -42,7 +42,8 @@ function Test-EndpointLatency {
 }
 
 Write-Host "Warmup..."
-1..5 | ForEach-Object { Invoke-WebRequest -Uri ($base + "/sensor/main_ph") -UseBasicParsing -TimeoutSec 5 | Out-Null; Start-Sleep -Milliseconds 120 }
+try { Invoke-WebRequest -Uri ($base + "/button/kh_stop/press") -Method Post -UseBasicParsing -TimeoutSec 8 | Out-Null } catch {}
+1..5 | ForEach-Object { Invoke-WebRequest -Uri ($base + "/sensor/main_ph") -UseBasicParsing -TimeoutSec 8 | Out-Null; Start-Sleep -Milliseconds 120 }
 
 $targets = @(
   "/sensor/main_ph",
@@ -70,4 +71,3 @@ try {
 catch {
   Write-Host ("ERR metrics => " + $_.Exception.Message)
 }
-

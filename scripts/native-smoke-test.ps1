@@ -32,3 +32,21 @@ $r2 = Invoke-WebRequest -Uri ($base + "/text_sensor/kh_mode") -UseBasicParsing -
 Write-Host ("STATUS => " + $r1.Content)
 Write-Host ("MODE   => " + $r2.Content)
 
+Write-Host "Stop KH cycle after smoke..."
+Invoke-WebRequest -Uri ($base + "/button/kh_stop/press") -Method Post -UseBasicParsing -TimeoutSec 8 | Out-Null
+Start-Sleep -Milliseconds 300
+$r3 = Invoke-WebRequest -Uri ($base + "/text_sensor/kh_status") -UseBasicParsing -TimeoutSec 8
+$r4 = Invoke-WebRequest -Uri ($base + "/text_sensor/kh_mode") -UseBasicParsing -TimeoutSec 8
+Write-Host ("STATUS => " + $r3.Content)
+Write-Host ("MODE   => " + $r4.Content)
+
+Write-Host "Relay state endpoints check..."
+foreach ($s in @("/binary_sensor/p1_active", "/binary_sensor/p2_active", "/binary_sensor/air_active", "/binary_sensor/ads_online")) {
+  try {
+    $r = Invoke-WebRequest -Uri ($base + $s) -UseBasicParsing -TimeoutSec 8
+    Write-Host ("OK  " + $s + "  =>  " + $r.Content)
+  }
+  catch {
+    Write-Host ("ERR " + $s + "  =>  " + $_.Exception.Message)
+  }
+}

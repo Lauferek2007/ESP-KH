@@ -441,13 +441,13 @@
 
           <article class="card activity-card widget" data-widget="w-relays">
             <h3>Elementy wykonawcze</h3>
-            <div class="row"><span>P1 intake</span><span><span class="status-dot err"></span>OFF</span></div>
-            <div class="row"><span>P2 return</span><span><span class="status-dot err"></span>OFF</span></div>
-            <div class="row"><span>Air pump</span><span><span class="status-dot err"></span>OFF</span></div>
+            <div class="row"><span>P1 intake</span><span><span class="status-dot err" id="p1Dot"></span><span id="p1Txt">OFF</span></span></div>
+            <div class="row"><span>P2 return</span><span><span class="status-dot err" id="p2Dot"></span><span id="p2Txt">OFF</span></span></div>
+            <div class="row"><span>Air pump</span><span><span class="status-dot err" id="airDot"></span><span id="airTxt">OFF</span></span></div>
             <hr style="border-color: var(--line); opacity:.4;">
-            <div class="row"><span>P1 active icon</span><div class="switch"><div class="knob"></div></div></div>
-            <div class="row"><span>P2 active icon</span><div class="switch"><div class="knob"></div></div></div>
-            <div class="row"><span>Air active icon</span><div class="switch"><div class="knob"></div></div></div>
+            <div class="row"><span>P1 active icon</span><div class="switch" id="actP1"><div class="knob"></div></div></div>
+            <div class="row"><span>P2 active icon</span><div class="switch" id="actP2"><div class="knob"></div></div></div>
+            <div class="row"><span>Air active icon</span><div class="switch" id="actAir"><div class="knob"></div></div></div>
           </article>
 
           <article class="card control-card widget" data-widget="w-quick">
@@ -778,9 +778,10 @@
       while (ul.children.length > 16) ul.removeChild(ul.lastChild);
     }
 
-    const API_BASE = (location.hostname === "127.0.0.1" || location.hostname === "localhost")
+    const ESP_BASE = new URLSearchParams(location.search).get("esp") || "http://192.168.1.200";
+    let API_BASE = (location.hostname === "127.0.0.1" || location.hostname === "localhost")
       ? "/api"
-      : "http://192.168.1.200";
+      : ESP_BASE;
     const E = {
       mainPh: "sensor-main_ph",
       a1v: "sensor-a1_ph_voltage__v_",
@@ -798,6 +799,9 @@
       swP1: "switch-manual_hold_p1",
       swP2: "switch-manual_hold_p2",
       swAir: "switch-manual_hold_air",
+      p1Active: "binary_sensor-p1_active",
+      p2Active: "binary_sensor-p2_active",
+      airActive: "binary_sensor-air_active",
     };
 
     const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -816,6 +820,7 @@
           return;
         } catch (err) {
           lastError = err;
+          if (API_BASE === "/api") API_BASE = ESP_BASE;
           await sleep(250 * attempt);
         }
       }
@@ -850,6 +855,17 @@
         const res = await fetch(`${API_BASE}${path}`, { signal: controller.signal });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         return await res.json();
+      } catch (err) {
+        if (API_BASE === "/api") {
+          API_BASE = ESP_BASE;
+          const controller2 = new AbortController();
+          const timer2 = setTimeout(() => controller2.abort(), timeoutMs);
+          const res = await fetch(`${API_BASE}${path}`, { signal: controller2.signal });
+          clearTimeout(timer2);
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          return await res.json();
+        }
+        throw err;
       } finally {
         clearTimeout(timer);
       }
@@ -872,6 +888,9 @@
         [["/sensor/wifi_rssi", "/sensor/api_wifi_rssi", "/sensor-wifi_rssi"], (d) => bind[E.wifiRssi]?.(d)],
         [["/text_sensor/wifi_ssid", "/text_sensor/api_wifi_ssid", "/text_sensor-wifi_ssid"], (d) => bind[E.wifiSsid]?.(d)],
         [["/sensor/dallas_temp__c_", "/sensor/dallas_temp_c", "/sensor-dallas_temp__c_"], (d) => bind[E.dallas]?.(d)],
+        [["/binary_sensor/p1_active", "/binary_sensor-p1_active"], (d) => bind[E.p1Active]?.(d)],
+        [["/binary_sensor/p2_active", "/binary_sensor-p2_active"], (d) => bind[E.p2Active]?.(d)],
+        [["/binary_sensor/air_active", "/binary_sensor-air_active"], (d) => bind[E.airActive]?.(d)],
         [["/diag/metrics"], (d) => bind["diag-metrics"]?.(d)],
       ];
       let okCount = 0;
@@ -904,6 +923,24 @@
     }
 
     const bind = {
+      [E.p1Active]: (d) => {
+        const on = (d.state || "").toUpperCase() === "ON" || d.value === true;
+        updateSwitchVisual(document.getElementById("actP1"), on);
+        document.getElementById("p1Txt").textContent = on ? "ON" : "OFF";
+        document.getElementById("p1Dot").className = `status-dot ${on ? "ok" : "err"}`;
+      },
+      [E.p2Active]: (d) => {
+        const on = (d.state || "").toUpperCase() === "ON" || d.value === true;
+        updateSwitchVisual(document.getElementById("actP2"), on);
+        document.getElementById("p2Txt").textContent = on ? "ON" : "OFF";
+        document.getElementById("p2Dot").className = `status-dot ${on ? "ok" : "err"}`;
+      },
+      [E.airActive]: (d) => {
+        const on = (d.state || "").toUpperCase() === "ON" || d.value === true;
+        updateSwitchVisual(document.getElementById("actAir"), on);
+        document.getElementById("airTxt").textContent = on ? "ON" : "OFF";
+        document.getElementById("airDot").className = `status-dot ${on ? "ok" : "err"}`;
+      },
       [E.mainPh]: (d) => {
         document.getElementById("phMain").textContent = d.state || "NA";
         document.getElementById("calPhNow").textContent = d.state || "NA";
