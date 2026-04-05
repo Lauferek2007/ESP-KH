@@ -426,8 +426,8 @@
           </article>
           <article class="card kpi widget" data-widget="w-mode">
             <h3>Tryb pracy</h3>
-            <div class="big">Idle</div>
-            <div class="muted">Uptime: 01:49:17</div>
+            <div class="big" id="modeBig">Idle</div>
+            <div class="muted">Uptime: <span id="uptimeTxt">NA</span></div>
             <div class="muted">Dallas: <span id="dallasTemp">NA</span></div>
             <div class="muted">CPU load: <span id="cpuLoad">NA</span></div>
             <div class="muted">Heap used: <span id="heapUsed">NA</span></div>
@@ -497,7 +497,7 @@
                 <div class="row">
                   <span>Procedura</span><span class="chip">predrain -> fill -> measure -> aerate -> measure -> drain</span>
                 </div>
-                <button class="btn primary" id="simulateBtn" style="margin-top:10px;">Symuluj pomiar 60s</button>
+                <button class="btn primary" id="simulateBtn" style="margin-top:10px;">Start real KH quick 60s</button>
               </div>
             </div>
           </article>
@@ -892,6 +892,9 @@
         [["/binary_sensor/p2_active", "/binary_sensor-p2_active"], (d) => bind[E.p2Active]?.(d)],
         [["/binary_sensor/air_active", "/binary_sensor-air_active"], (d) => bind[E.airActive]?.(d)],
         [["/diag/metrics"], (d) => bind["diag-metrics"]?.(d)],
+        [["/diag/cycle"], (d) => bind["diag-cycle"]?.(d)],
+        [["/text_sensor/kh_mode", "/text_sensor-kh_mode"], (d) => bind["kh-mode"]?.(d)],
+        [["/text_sensor/kh_status", "/text_sensor-kh_status"], (d) => bind["kh-status"]?.(d)],
       ];
       let okCount = 0;
       await Promise.all(reqs.map(async ([paths, apply]) => {
@@ -961,6 +964,35 @@
         document.getElementById("cpuLoad").textContent = Number.isFinite(Number(d.cpu_load_pct)) ? `${Number(d.cpu_load_pct).toFixed(1)}%` : "NA";
         document.getElementById("heapUsed").textContent = Number.isFinite(Number(d.heap_used_pct)) ? `${Number(d.heap_used_pct).toFixed(1)}%` : "NA";
         document.getElementById("httpAvg").textContent = Number.isFinite(Number(d.http_avg_ms)) ? `${Number(d.http_avg_ms).toFixed(2)} ms` : "NA";
+        const up = Number(d.uptime_s);
+        if (Number.isFinite(up)) {
+          const hh = String(Math.floor(up / 3600)).padStart(2, "0");
+          const mm = String(Math.floor((up % 3600) / 60)).padStart(2, "0");
+          const ss = String(Math.floor(up % 60)).padStart(2, "0");
+          document.getElementById("uptimeTxt").textContent = `${hh}:${mm}:${ss}`;
+        }
+      },
+      ["kh-mode"]: (d) => {
+        document.getElementById("modeBig").textContent = d.state || "Idle";
+      },
+      ["kh-status"]: (d) => {
+        const st = d.state || "Idle";
+        document.getElementById("stageName").textContent = st;
+      },
+      ["diag-cycle"]: (d) => {
+        const rem = Number(d.remaining_ms);
+        const pct = Number(d.progress_pct);
+        const running = !!d.running;
+        if (Number.isFinite(rem)) {
+          const totalSec = Math.max(0, Math.floor(rem / 1000));
+          const mm = String(Math.floor(totalSec / 60)).padStart(2, "0");
+          const ss = String(totalSec % 60).padStart(2, "0");
+          document.getElementById("countdown").textContent = `${mm}:${ss}`;
+        }
+        document.getElementById("measureBar").style.width = `${Number.isFinite(pct) ? Math.max(0, Math.min(100, pct)) : 0}%`;
+        if (!running) {
+          document.getElementById("countdown").textContent = "00:00";
+        }
       },
       [E.phCal1]: (d) => {
         const v = Number(d.value ?? d.state);
@@ -1093,50 +1125,28 @@
       addLog("debugLog", "Debug feed wyczyszczony.");
     });
 
-    let simTimer = null;
     document.getElementById("simulateBtn").addEventListener("click", () => {
-      if (simTimer) return;
-      let total = 60;
-      const stages = [
-        { name: "Pre-drain", start: 60, end: 52, p1: false, p2: true, air: false },
-        { name: "Fill sample", start: 52, end: 42, p1: true, p2: false, air: false },
-        { name: "Measure #1", start: 42, end: 34, p1: false, p2: false, air: false },
-        { name: "Aeration", start: 34, end: 14, p1: false, p2: false, air: true },
-        { name: "Measure #2", start: 14, end: 8, p1: false, p2: false, air: false },
-        { name: "Drain return", start: 8, end: 0, p1: false, p2: true, air: false },
-      ];
-
-      function setRelayState(on, flowId, stateId) {
-        const flow = document.getElementById(flowId);
-        const state = document.getElementById(stateId);
-        flow.classList.toggle("active", on);
-        state.textContent = on ? "ON" : "OFF";
-        state.style.borderColor = on ? "rgba(77,255,179,.6)" : "rgba(255,255,255,.15)";
-      }
-
-      simTimer = setInterval(() => {
-        const mm = String(Math.floor(total / 60)).padStart(2, "0");
-        const ss = String(total % 60).padStart(2, "0");
-        document.getElementById("countdown").textContent = `${mm}:${ss}`;
-        document.getElementById("measureBar").style.width = `${((60 - total) / 60) * 100}%`;
-
-        const stage = stages.find((s) => total <= s.start && total > s.end) || { name: "Completed", p1: false, p2: false, air: false };
-        document.getElementById("stageName").textContent = stage.name;
-        setRelayState(stage.p1, "p1Flow", "p1State");
-        setRelayState(stage.p2, "p2Flow", "p2State");
-        setRelayState(stage.air, "airFlow", "airState");
-
-        if (total % 10 === 0) addLog("opsLog", `Symulacja: ${stage.name}`);
-        total -= 1;
-
-        if (total < 0) {
-          clearInterval(simTimer);
-          simTimer = null;
-          addLog("opsLog", "Symulacja KH 60s zakonczona.");
-          document.getElementById("stageName").textContent = "Idle";
-        }
-      }, 1000);
+      queueApiCall(() => pressButton("start_kh_quick_60s"));
+      addLog("opsLog", "Start real KH quick 60s.");
     });
+
+    setInterval(async () => {
+      try {
+        const p1 = await getFirstJson(["/binary_sensor/p1_active", "/binary_sensor-p1_active"], 2500);
+        const p2 = await getFirstJson(["/binary_sensor/p2_active", "/binary_sensor-p2_active"], 2500);
+        const air = await getFirstJson(["/binary_sensor/air_active", "/binary_sensor-air_active"], 2500);
+        const setRelayState = (on, flowId, stateId) => {
+          const flow = document.getElementById(flowId);
+          const state = document.getElementById(stateId);
+          flow.classList.toggle("active", on);
+          state.textContent = on ? "ON" : "OFF";
+          state.style.borderColor = on ? "rgba(77,255,179,.6)" : "rgba(255,255,255,.15)";
+        };
+        setRelayState((p1.state || "").toUpperCase() === "ON", "p1Flow", "p1State");
+        setRelayState((p2.state || "").toUpperCase() === "ON", "p2Flow", "p2State");
+        setRelayState((air.state || "").toUpperCase() === "ON", "airFlow", "airState");
+      } catch {}
+    }, 2000);
 
     document.getElementById("contrastBtn").addEventListener("click", () => {
       const root = document.documentElement;

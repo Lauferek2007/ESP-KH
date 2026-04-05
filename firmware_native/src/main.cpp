@@ -84,6 +84,9 @@ uint32_t g_dbg_loops = 0;
 uint32_t g_dallas_req_ms = 0;
 
 uint32_t g_step_deadline_ms = 0;
+uint32_t g_step_start_ms = 0;
+uint32_t g_cycle_start_ms = 0;
+uint32_t g_cycle_total_ms = 0;
 uint8_t g_cycle_stage = 0;
 bool g_cycle_running = false;
 float g_ph_before = NAN;
@@ -149,12 +152,16 @@ void startCycle(Mode mode) {
   g_cycle_stage = 0;
   g_kh_mode = (mode == MODE_FULL) ? "Full" : (mode == MODE_QUICK) ? "Quick" : (mode == MODE_SERVICE) ? "Service" : "Quick 60s";
   g_kh_status = "Prepare times";
+  g_cycle_start_ms = millis();
+  g_cycle_total_ms = 0;
+  g_step_start_ms = g_cycle_start_ms;
   g_last_error = "None";
 }
 
 void stopCycle() {
   g_cycle_running = false;
   g_cycle_stage = 0;
+  g_cycle_total_ms = 0;
   setAllOff();
   g_kh_status = "Stopped";
   g_kh_mode = "Stopped";
@@ -186,6 +193,14 @@ void updateCycle() {
     const float m = modeMultiplier();
     const float p2r = p2RateMlps();
     const float drain = ((p2r > MIN_VALID_MLPS) ? (vol / p2r) : g_fallback_drain_s) * m;
+    const float p1r = p1RateMlps();
+    const float fill = ((p1r > MIN_VALID_MLPS) ? (vol / p1r) : g_fallback_fill_s) * m;
+    const uint32_t settle_before = (uint32_t)(g_settle_before_s * m * 1000.0f);
+    const uint32_t settle_after = (uint32_t)(g_settle_after_s * m * 1000.0f);
+    const uint32_t aer = (uint32_t)(g_aer_full_s * m * 1000.0f);
+    g_cycle_start_ms = now;
+    g_cycle_total_ms = (uint32_t)(drain * 1.5f * 1000.0f) + (uint32_t)(fill * 1000.0f) + settle_before + aer + settle_after + (uint32_t)(drain * 1000.0f);
+    g_step_start_ms = now;
     g_step_deadline_ms = now + (uint32_t)(drain * 1.5f * 1000.0f);
     setAllOff();
     digitalWrite(PIN_P2, HIGH);
@@ -210,12 +225,14 @@ void updateCycle() {
       setAllOff();
       digitalWrite(PIN_P1, HIGH);
       g_kh_status = "Fill sample";
+      g_step_start_ms = now;
       g_step_deadline_ms = now + (uint32_t)(fill * 1000.0f);
       g_cycle_stage = 2;
       break;
     case 2:
       setAllOff();
       g_kh_status = "Settle before";
+      g_step_start_ms = now;
       g_step_deadline_ms = now + settle_before;
       g_cycle_stage = 3;
       break;
@@ -223,12 +240,14 @@ void updateCycle() {
       g_ph_before = mainPh();
       g_kh_status = "Measure #1";
       digitalWrite(PIN_AIR, HIGH);
+      g_step_start_ms = now;
       g_step_deadline_ms = now + aer;
       g_cycle_stage = 4;
       break;
     case 4:
       setAllOff();
       g_kh_status = "Settle after";
+      g_step_start_ms = now;
       g_step_deadline_ms = now + settle_after;
       g_cycle_stage = 5;
       break;
@@ -236,6 +255,7 @@ void updateCycle() {
       g_ph_after = mainPh() + 0.12f;
       g_kh_status = "Measure #2";
       digitalWrite(PIN_P2, HIGH);
+      g_step_start_ms = now;
       g_step_deadline_ms = now + (uint32_t)(drain * 1000.0f);
       g_cycle_stage = 6;
       break;
@@ -246,6 +266,7 @@ void updateCycle() {
       g_kh_status = "Done";
       g_cycle_running = false;
       g_cycle_stage = 0;
+      g_cycle_total_ms = 0;
       break;
     }
     default:
@@ -504,6 +525,27 @@ void registerRoutes() {
     body += "\"http_avg_ms\":" + String(g_http_avg_ms, 4) + ",";
     body += "\"http_max_ms\":" + String(g_http_max_ms, 4) + ",";
     body += "\"uptime_s\":" + String(g_uptime_s);
+    body += "}";
+    server.send(200, "application/json", body);
+  });
+
+  server.on("/diag/cycle", HTTP_GET, []() {
+    applyCors();
+    const uint32_t now = millis();
+    const uint32_t remain_ms = (g_cycle_running && (int32_t)(g_step_deadline_ms - now) > 0) ? (g_step_deadline_ms - now) : 0;
+    const uint32_t elapsed_ms = g_cycle_running ? (now - g_cycle_start_ms) : 0;
+    const float progress_pct = (g_cycle_running && g_cycle_total_ms > 0)
+                                   ? min(100.0f, (100.0f * (float)elapsed_ms) / (float)g_cycle_total_ms)
+                                   : 0.0f;
+    String body = "{";
+    body += "\"running\":" + String(g_cycle_running ? "true" : "false") + ",";
+    body += "\"mode\":\"" + g_kh_mode + "\",";
+    body += "\"status\":\"" + g_kh_status + "\",";
+    body += "\"stage\":" + String(g_cycle_stage) + ",";
+    body += "\"remaining_ms\":" + String(remain_ms) + ",";
+    body += "\"elapsed_ms\":" + String(elapsed_ms) + ",";
+    body += "\"total_ms\":" + String(g_cycle_total_ms) + ",";
+    body += "\"progress_pct\":" + String(progress_pct, 2);
     body += "}";
     server.send(200, "application/json", body);
   });
