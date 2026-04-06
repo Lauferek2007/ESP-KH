@@ -101,6 +101,112 @@ uint32_t g_ads_last_recover_ms = 0;
 enum Mode : uint8_t { MODE_FULL, MODE_QUICK, MODE_SERVICE, MODE_QUICK60 };
 Mode g_mode = MODE_FULL;
 
+constexpr const char *INDEX_HTML = R"HTML(
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>KH Keeper Native</title>
+  <style>
+    :root{--bg:#08131b;--card:#122736;--line:#28465d;--text:#e9f6ff;--mut:#9ec2d8;--ok:#5dffb5;--bad:#ff7b7b;--acc:#35d6ff}
+    *{box-sizing:border-box}body{margin:0;font-family:Segoe UI,Arial,sans-serif;background:linear-gradient(140deg,#071018,#123247);color:var(--text)}
+    .wrap{max-width:920px;margin:0 auto;padding:18px}.h{display:flex;justify-content:space-between;align-items:center;gap:8px}
+    .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:10px;margin-top:12px}
+    .c{background:rgba(18,39,54,.9);border:1px solid var(--line);border-radius:12px;padding:12px}
+    .k{font-size:12px;color:var(--mut)}.v{font-size:28px;font-weight:700;margin-top:6px}.r{display:flex;justify-content:space-between;margin:8px 0}
+    .dot{display:inline-block;width:10px;height:10px;border-radius:99px;margin-right:6px}
+    .ok{background:var(--ok)}.bad{background:var(--bad)}
+    button{background:#17384c;border:1px solid #3ca5c8;color:var(--text);border-radius:10px;padding:10px 12px;font-weight:700;cursor:pointer}
+    button:hover{filter:brightness(1.1)} .danger{border-color:#f17171}
+    .mut{color:var(--mut);font-size:12px}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="h">
+      <h2>KH Keeper Native Panel</h2>
+      <div class="mut">ESP @ 192.168.1.200</div>
+    </div>
+    <div class="grid">
+      <div class="c"><div class="k">Main pH</div><div class="v" id="ph">NA</div><div class="mut">A1: <span id="a1">NA</span></div></div>
+      <div class="c"><div class="k">Ostatni KH</div><div class="v" id="kh">NA</div><div class="mut">Mode: <span id="mode">NA</span></div></div>
+      <div class="c"><div class="k">Status</div><div class="v" id="status">NA</div><div class="mut">ETA: <span id="eta">00:00</span></div></div>
+      <div class="c"><div class="k">Dallas</div><div class="v" id="dallas">NA</div><div class="mut">WiFi: <span id="wifi">NA</span></div></div>
+    </div>
+    <div class="c" style="margin-top:10px">
+      <div class="r"><span>P1</span><span id="p1"><span class="dot bad"></span>OFF</span></div>
+      <div class="r"><span>P2</span><span id="p2"><span class="dot bad"></span>OFF</span></div>
+      <div class="r"><span>AIR</span><span id="air"><span class="dot bad"></span>OFF</span></div>
+      <div class="r"><span>ADS</span><span id="ads"><span class="dot bad"></span>OFFLINE</span></div>
+    </div>
+    <div class="c" style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">
+      <button onclick="post('/button/start_kh_quick_60s/press')">Start KH quick 60s</button>
+      <button onclick="post('/button/start_service_test/press')">Tryb serwis</button>
+      <button class="danger" onclick="post('/button/kh_stop/press')">KH STOP</button>
+      <button onclick="post('/button/manual_test_p1/press')">Test P1</button>
+      <button onclick="post('/button/manual_test_p2/press')">Test P2</button>
+      <button onclick="post('/button/manual_test_air/press')">Test AIR</button>
+    </div>
+    <div class="c" style="margin-top:10px">
+      <div class="r"><strong>Kalibracja P1/P2 (60s)</strong><span class="mut">wpisz ml i zapisz</span></div>
+      <div class="r"><span>P1 ml z wagi</span><input id="p1ml" type="number" min="0" max="1000" step="1" value="0" style="width:110px"></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button onclick="post('/button/calibrate_p1__60s_/press')">Start P1 60s</button>
+        <button onclick="setNum('/number/p1_measured_volume__ml_/set','p1ml')">Ustaw P1 ml</button>
+        <button onclick="post('/button/save_p1_calibration/press')">Zapisz P1 cal</button>
+      </div>
+      <div class="r" style="margin-top:10px"><span>P2 ml z wagi</span><input id="p2ml" type="number" min="0" max="1000" step="1" value="0" style="width:110px"></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button onclick="post('/button/calibrate_p2__60s_/press')">Start P2 60s</button>
+        <button onclick="setNum('/number/p2_measured_volume__ml_/set','p2ml')">Ustaw P2 ml</button>
+        <button onclick="post('/button/save_p2_calibration/press')">Zapisz P2 cal</button>
+      </div>
+      <div class="r" style="margin-top:10px"><span>Manual volume [ml]</span><input id="mvol" type="number" min="1" max="100" step="1" value="20" style="width:110px"></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button onclick="setNum('/number/manual_test_volume__ml_/set','mvol')">Ustaw manual ml</button>
+      </div>
+    </div>
+  </div>
+  <script>
+    const j = (u) => fetch(u).then(r=>r.json());
+    const post = (u) => fetch(u,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'x='}).then(()=>setTimeout(poll,200));
+    const setNum = async (path, id) => {
+      const v = document.getElementById(id).value || "0";
+      await fetch(path + '?value=' + encodeURIComponent(v), {method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'x='});
+      setTimeout(poll, 200);
+    };
+    const badge = (on, label) => `<span class="dot ${on?'ok':'bad'}"></span>${label}`;
+    const eta = (ms)=>{const s=Math.max(0,Math.floor(ms/1000)); return String(Math.floor(s/60)).padStart(2,'0')+':'+String(s%60).padStart(2,'0');};
+    async function poll(){
+      try{
+        const [ph,a1,kh,mode,status,dallas,wifi,p1,p2,air,ads,cycle] = await Promise.all([
+          j('/sensor/main_ph'), j('/sensor/a1_ph_voltage__v_'), j('/sensor/last_kh__dkh_'),
+          j('/text_sensor/kh_mode'), j('/text_sensor/kh_status'), j('/sensor/dallas_temp__c_'),
+          j('/sensor/wifi_rssi'), j('/binary_sensor/p1_active'), j('/binary_sensor/p2_active'),
+          j('/binary_sensor/air_active'), j('/binary_sensor/ads_online'), j('/diag/cycle')
+        ]);
+        document.getElementById('ph').textContent = ph.state || 'NA';
+        document.getElementById('a1').textContent = a1.state || 'NA';
+        document.getElementById('kh').textContent = kh.state || 'NA';
+        document.getElementById('mode').textContent = mode.state || 'NA';
+        document.getElementById('status').textContent = status.state || 'NA';
+        document.getElementById('dallas').textContent = dallas.state || 'NA';
+        document.getElementById('wifi').textContent = wifi.state || 'NA';
+        document.getElementById('eta').textContent = eta(cycle.remaining_ms || 0);
+        document.getElementById('p1').innerHTML = badge((p1.state||'').toUpperCase()==='ON', (p1.state||'OFF'));
+        document.getElementById('p2').innerHTML = badge((p2.state||'').toUpperCase()==='ON', (p2.state||'OFF'));
+        document.getElementById('air').innerHTML = badge((air.state||'').toUpperCase()==='ON', (air.state||'OFF'));
+        const adsOn = (ads.state||'').toUpperCase()==='ON';
+        document.getElementById('ads').innerHTML = badge(adsOn, adsOn ? 'ONLINE' : 'OFFLINE');
+      }catch(_){}
+    }
+    poll(); setInterval(poll,2000);
+  </script>
+</body>
+</html>
+)HTML";
+
 inline void setAllOff() {
   digitalWrite(PIN_P1, LOW);
   digitalWrite(PIN_P2, LOW);
@@ -332,6 +438,19 @@ void updateDebugWindow(uint32_t workUs, uint32_t httpUs) {
 }
 
 void registerRoutes() {
+  server.on("/", HTTP_GET, []() {
+    applyCors();
+    server.send(200, "text/html; charset=utf-8", INDEX_HTML);
+  });
+  server.on("/index.html", HTTP_GET, []() {
+    applyCors();
+    server.send(200, "text/html; charset=utf-8", INDEX_HTML);
+  });
+  server.on("/webgui-prototype.html", HTTP_GET, []() {
+    applyCors();
+    server.send(200, "text/html; charset=utf-8", INDEX_HTML);
+  });
+
   server.onNotFound([]() {
     applyCors();
     if (server.method() == HTTP_OPTIONS) return server.send(204);
